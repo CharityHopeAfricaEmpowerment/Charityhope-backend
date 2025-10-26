@@ -1,0 +1,15 @@
+{
+  "name": "charityhope-backend",
+  "version": "1.0.0",
+  "description": "Plateforme des événements Charity & Hope Africa Empowerment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongoose": "^8.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
+  }
+}
