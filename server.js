@@ -1,5 +1,5 @@
 // 🌍 Charity & Hope Africa Empowerment - Backend Complet
-// Gestion des inscriptions, emails et QR codes
+// Serveur principal Node.js / Express avec QR Code, Email et MongoDB
 
 import express from "express";
 import mongoose from "mongoose";
@@ -8,6 +8,7 @@ import cors from "cors";
 import multer from "multer";
 import nodemailer from "nodemailer";
 import QRCode from "qrcode";
+import path from "path";
 import fs from "fs";
 
 dotenv.config();
@@ -15,17 +16,18 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use("/uploads", express.static("uploads"));
 
-// 🗃️ Connexion à MongoDB
+// ✅ Connexion MongoDB
 mongoose
   .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
   .then(() => console.log("✅ Connecté à MongoDB Atlas"))
-  .catch((err) => console.error("❌ Erreur MongoDB:", err));
+  .catch((err) => console.error("❌ Erreur MongoDB :", err));
 
-// 📦 Modèle de données pour une inscription
+// 📦 Modèle Mongoose
 const registrationSchema = new mongoose.Schema({
   fullName: String,
   email: String,
@@ -35,52 +37,47 @@ const registrationSchema = new mongoose.Schema({
   ticketCode: String,
   createdAt: { type: Date, default: Date.now },
 });
-
 const Registration = mongoose.model("Registration", registrationSchema);
 
-// 🗂️ Configuration pour upload de fichiers (PDF, images…)
+// 📁 Configuration Multer pour upload fichiers
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = "./uploads";
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
+  destination: function (req, file, cb) {
+    if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
+    cb(null, "uploads/");
   },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+  filename: function (req, file, cb) {
+    cb(null, `${Date.now()}-${file.originalname}`);
   },
 });
-
 const upload = multer({ storage });
 
-// 📩 Fonction d’envoi d’email
+// 📧 Configuration Nodemailer
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER, // ton email ex: donatecharityhopeafrica@gmail.com
-    pass: process.env.EMAIL_PASS, // ton mot de passe d’application Gmail
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 });
 
-// 🚦 Route test
-app.get("/", (req, res) => {
-  res.send("✅ Serveur Charity & Hope Africa opérationnel 🌍");
-});
-
-// 🧾 Route d’inscription + génération du QR code + email
+// 🧾 Route d’inscription principale
 app.post("/api/register", upload.single("file"), async (req, res) => {
   try {
     const { fullName, email, eventType, phone } = req.body;
+    if (!fullName || !email || !eventType || !phone) {
+      return res.status(400).json({ message: "Champs requis manquants" });
+    }
 
-    // Génération du code unique (par exemple : GALA-VIP-233-25)
-    const ticketCode = `${eventType.toUpperCase()}-${Math.floor(
-      233 + Math.random() * 100
-    )}-${new Date().getFullYear()}`;
+    // Génération code unique (ex: GALA-VIP 233-25)
+    const baseCode = eventType.toUpperCase().replace(/\s+/g, "-");
+    const randomPart = Math.floor(233 + Math.random() * 100);
+    const ticketCode = `${baseCode}-${randomPart}-${new Date().getFullYear()}`;
 
-    // Générer un QR code
+    // Génération du QR code
     const qrPath = `./uploads/${ticketCode}.png`;
-    await QRCode.toFile(qrPath, `Code Billet: ${ticketCode}`);
+    await QRCode.toFile(qrPath, `Billet: ${ticketCode}`);
 
-    // Sauvegarde dans MongoDB
+    // Sauvegarde en base
     const newReg = new Registration({
       fullName,
       email,
@@ -91,17 +88,18 @@ app.post("/api/register", upload.single("file"), async (req, res) => {
     });
     await newReg.save();
 
-    // Envoi d’un email de confirmation
+    // Envoi de l’email
     const mailOptions = {
       from: `"Charity & Hope Africa" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: `🎟️ Confirmation d'inscription - ${eventType}`,
       html: `
-        <h3>Bonjour ${fullName},</h3>
+        <h2>Bonjour ${fullName},</h2>
         <p>Merci pour votre inscription à <b>${eventType}</b>.</p>
-        <p>Voici votre code de billet : <b>${ticketCode}</b></p>
-        <p>Conservez-le précieusement pour vos accès aux événements.</p>
-        <p>Fraternellement,<br>Charity & Hope Africa Empowerment</p>
+        <p>Votre code de billet : <b>${ticketCode}</b></p>
+        <p>Conservez ce code précieusement pour votre accès à l'événement.</p>
+        <br>
+        <p>Bien à vous,<br><b>Charity & Hope Africa Empowerment</b></p>
       `,
       attachments: [
         {
@@ -114,16 +112,21 @@ app.post("/api/register", upload.single("file"), async (req, res) => {
     await transporter.sendMail(mailOptions);
 
     res.status(201).json({
-      message: "Inscription réussie, email envoyé ✅",
+      message: "✅ Inscription réussie. Email envoyé avec QR code.",
       ticketCode,
     });
   } catch (error) {
-    console.error("❌ Erreur lors de l’inscription:", error);
+    console.error("❌ Erreur d’inscription :", error);
     res.status(500).json({ message: "Erreur interne du serveur" });
   }
 });
 
-// 🌐 Démarrage du serveur
+// 🧾 Route GET pour vérifier le fonctionnement
+app.get("/", (req, res) => {
+  res.send("🌍 API Charity & Hope Africa opérationnelle !");
+});
+
+// 🚀 Lancement du serveur
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () =>
   console.log(`🚀 Serveur Charity & Hope actif sur le port ${PORT}`)
